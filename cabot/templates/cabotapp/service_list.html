@@ -10,7 +10,7 @@
     </div>
   </div>
   <div class="col-xs-12">
-    {% include 'cabotapp/_service_list.html' %}
+    <table class="table bootstrap-datatable datatable"></table>
   </div>
 </div>
 {% endblock content %}
@@ -20,7 +20,16 @@
 {{ block.super }}
 {% compress js %}
 <script type="text/coffeescript">
-  $('.datatable').dataTable
+  String.prototype.capitalizeFirstLetter = () ->
+    this.charAt(0).toUpperCase() + this.slice(1)
+
+  count_active_checks = (row) ->
+    (c for c in row.status_checks when c.active).length
+
+  count_inactive_checks = (row) ->
+    (c for c in row.status_checks when c.active).length
+
+  oTable = $('.datatable').dataTable
     sDom: "<'row-fluid'<'span6'l><'span6'f>r>t<'row-fluid'<'span12'i><'span12 center'p>>"
     sPaginationType: "bootstrap"
     iDisplayLength: 100
@@ -28,6 +37,106 @@
       sLengthMenu: "_MENU_ records per page"
     fnDrawCallback: () ->
       $('.sparktristate').sparkline('html', {type: 'tristate'})
+    sAjaxSource: '/api/services/?format=json'
+    fnServerData: ( sSource, aoData, fnCallback, oSettings ) ->
+      oSettings.jqXHR = $.ajax( {
+        dataType: "json"
+        type: "GET"
+        url: sSource
+        data: aoData
+        success: (data, textStatus, jqXHR) ->
+          fnCallback({ aaData: data }, textStatus, jqXHR)
+      } )
+    fnRowCallback: ( nRow, aData, iDisplayIndex ) ->
+      if aData.alerts_enabled
+        c = "enabled"
+      else
+        c = "warning"
+      $( nRow ).addClass( c )
+    aoColumnDefs: [
+      {
+        sTitle: "Name"
+        mData: (row) ->
+          href = "/service/"+row.id
+          title = "Alerts "
+          if row.alerts_enabled
+            title += "enabled"
+          else
+            title += "disabled"
+          "<a href='" + href + "' title='" + title + "'>" + row.name + "</a>"
+        aTargets: [0]
+      }
+      {
+        sTitle: "Overall"
+        mData: (row) ->
+          if row.alerts_enabled
+            t = row.overall_status.toLowerCase().capitalizeFirstLetter()
+            if row.overall_status == "PASSING"
+              c = "label-success"
+            else
+              c = "label-danger"
+          else
+            t = "Disabled"
+            c = "label-warning"
+          "<span class='label " + c + "'>" + t + "</span>"
+        aTargets: [1]
+      }
+      {
+        sTitle: "Active checks"
+        mData: (row) ->
+          num_active_checks = count_active_checks(row)
+          if num_active_checks > 0
+            if row.overall_status == "PASSING"
+              c = "label-success"
+            else
+              c = "label-danger"
+          else
+            c = "label-default"
+          "<span class='label " + c + "'>" + num_active_checks + "</span>"
+        aTargets: [2]
+      }
+      {
+        sTitle: "Disabled checks"
+        mData: (row) ->
+          num_inactive_checks = count_inactive_checks(row)
+          if num_inactive_checks > 0
+            if row.overall_status == "PASSING"
+              c = "label-success"
+            else
+              c = "label-danger"
+          else
+            c = "label-default"
+          "<span class='label " + c + "'>" + num_inactive_checks + "</span>"
+        aTargets: [3]
+      }
+      {
+        sTitle: "Acknowledgement"
+        mData: (row) ->
+          unexpired_acknowledgement = false
+          if row.overall_status != "PASSING"
+            if unexpired_acknowledgement
+              a = "<a href='/service/remove_acknowledgement/" + row.id + "' class=''><i class='' ></i>Re-enable alerts</a>"
+            else
+              a = "<a href='/service/acknowledge_alert/" + row.id + "' class=''><i class='' ></i>Acknowledge alert</a>"
+            "<div> <div class='col-xs-10'>" + a + "</div> </div>"
+          else
+            ""
+        aTargets: [4]
+      }
+      {
+        sTitle: ""
+        mData: (row) ->
+          "<a class='btn btn-xs' href='/service/update/"+row.id+"/' role='button'>
+  <i class='glyphicon glyphicon-edit'></i>
+</a>"
+        aTargets: [5]
+      }
+    ]
+
+  setInterval(() ->
+    oTable.fnReloadAjax()
+  , 30000);
+
 </script>
 {% endcompress %}
 {% endblock js %}
